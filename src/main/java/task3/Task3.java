@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.main.Main;
+import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
@@ -33,21 +34,68 @@ public class Task3 {
 	}
 	
 	public void execute() throws Exception {
-		camel = new Main();		
-		camel.addRouteBuilder(new RestRoute(HOST, PORT, API_STAT,  getPomInfo()));		
+		camel = new Main();
+		camel.addRouteBuilder(new RestRoute(HOST, PORT, API_STAT));		
 		System.out.println("Press Ctrl+C to terminate JVM\n");
         camel.run();
 	}
 	
 	/**
-	 * 
-	 * @return Строка, содержащая имя и версию артефакта maven
-	 * @throws FileNotFoundException
-	 * @throws IOException
-	 * @throws XmlPullParserException
+	 * Класс реализует маршрут, предоставляющий REST-сервис, 
+	 * который возвращает информацию Maven в формате JSON 
+	 * при GET-запросе на указанный метод.
+	 *
 	 */
-	private String getPomInfo() throws FileNotFoundException, IOException, XmlPullParserException {
+	private static class RestRoute extends RouteBuilder {
 		
+		private String host = null;
+		private String port = null;
+		private String api = null;
+		
+		public RestRoute(String host, String port, String api) {	
+			this.host = host;
+			this.port = port;
+			this.api = api;
+		}
+
+		@Override
+		public void configure() {
+			
+			restConfiguration()
+				.component("restlet")
+				.host(host)
+				.port(port);
+			
+			MavenInfo info = new MavenInfo();
+			
+			rest(api)
+				.get()
+					.produces("application/json")
+					.route()	
+					.transform(constant(info))
+					.marshal().json(JsonLibrary.Jackson);
+		}		
+	}
+}
+
+/**
+ * Класс предназначен для получения имени и версии артефакта Maven.
+ *
+ */
+class MavenInfo {
+	private String name = null;
+	private String version = null;
+	
+	public MavenInfo() {
+		try {
+			getPomInfo();
+		} catch (IOException | XmlPullParserException e) {
+			name = "unknown";
+			version = "unknown";
+		} 
+	}
+	
+	private void getPomInfo() throws FileNotFoundException, IOException, XmlPullParserException {
 		MavenXpp3Reader reader = new MavenXpp3Reader();
         File fpom = new File("pom.xml");
 		Model model = null;
@@ -60,44 +108,23 @@ public class Task3 {
 				model = reader.read(isr);
 			}
 		}
-		return String.format("%s, %s", model.getArtifactId(), model.getVersion());
+		name = model.getArtifactId();
+		version = model.getVersion();
 	}
 	
 	/**
-	 * Класс реализует маршрут, предоставляющий REST-сервис, 
-	 * который возвращает заданную строку при GET-запросе на 
-	 * указанный метод.
-	 *
+	 * 
+	 * @return имя артефакта Maven
 	 */
-	private static class RestRoute extends RouteBuilder {
-		
-		private String host = null;
-		private String port = null;
-		private String api = null;
-		private String responseString = null;
-		
-		public RestRoute(String host, String port, String api, String responseString) {	
-			
-			this.host = host;
-			this.port = port;
-			this.api = api;
-			this.responseString = responseString;
-		}
-
-		@Override
-		public void configure() {
-			
-			restConfiguration()
-				.component("restlet")
-				.host(host)
-				.port(port);
-			
-			rest(api)
-				.get()
-				.produces("text/html")
-				.route()
-				.setBody(constant(responseString));				
-		}		
+	public String getName() {
+		return name;
 	}
-
+	
+	/**
+	 * 
+	 * @return версия артефакта Maven
+	 */
+	public String getVersion() {
+		return version;
+	}
 }
